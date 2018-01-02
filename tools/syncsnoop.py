@@ -34,10 +34,10 @@ int do_trace(struct pt_regs *ctx) {
             // output if time is less than 1 second
             bpf_trace_printk("%d %d\\n", vc, delta / 1000000);
 
-            last.delete(&key_count);
             vc = 0;
         }
 
+        last.delete(&key_count);
         last.delete(&key_time);
     }
 
