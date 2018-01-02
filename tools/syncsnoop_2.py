@@ -1,9 +1,9 @@
 #!/usr/bin/python
 #
-# sync_timing.py    Trace time between syncs.
+# syncsnoop_2.py    Trace time and count between syncs.
 #                   For Linux, uses BCC, eBPF. Embedded C.
 #
-# Written as a basic example of tracing time between events.
+# Written as a basic example of tracing time and count between events.
 #
 # Licensed under the Apache License, Version 2.0 (the "License")
 
