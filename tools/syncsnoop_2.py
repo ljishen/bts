@@ -50,11 +50,11 @@ int do_trace(struct pt_regs *ctx) {
 
             events.perf_submit(ctx, &data, sizeof(data));
 
-	    data.count = 0;
+            data.count = 0;
         }
 
         last.delete(&key_time);
-	last.delete(&key_count);
+        last.delete(&key_count);
     }
 
     // update stored timestamp
@@ -72,27 +72,32 @@ b = BPF(text=prog)
 b.attach_kprobe(event="sys_sync", fn_name="do_trace")
 
 # define output data structure in Python
-TASK_COMM_LEN = 16    # linux/sched.h
+TASK_COMM_LEN = 16  # linux/sched.h
+
+
 class Data(ct.Structure):
-    _fields_ = [("pid", ct.c_uint),
-                ("ts", ct.c_ulonglong),
-                ("comm", ct.c_char * TASK_COMM_LEN),
-                ("delta", ct.c_ulonglong),
-		("count", ct.c_ulonglong)]
+    _fields_ = [("pid", ct.c_uint), ("ts", ct.c_ulonglong),
+                ("comm", ct.c_char * TASK_COMM_LEN), ("delta", ct.c_ulonglong),
+                ("count", ct.c_ulonglong)]
+
 
 # header
-print("%-18s %-16s %-16s %-16s %-6s" % ("TIME(s)", "COMM", "PID", "COUNT", "DELTA(ms)"))
+print("%-18s %-16s %-16s %-16s %-6s" % ("TIME(s)", "COMM", "PID", "COUNT",
+                                        "DELTA(ms)"))
 
 # process event
 start = 0
+
+
 def print_event(cpu, data, size):
     global start
     event = ct.cast(data, ct.POINTER(Data)).contents
     if start == 0:
-            start = event.ts
+        start = event.ts
     time_s = (float(event.ts - start)) / 1000000000
     print("%-18.9f %-16s %-16d %-16d %-6.3f" % (time_s, event.comm, event.pid,
-        event.count, event.delta))
+                                                event.count, event.delta))
+
 
 # loop with callback to print_event
 b["events"].open_perf_buffer(print_event)
