@@ -15,8 +15,24 @@
 from __future__ import print_function
 from bcc import BPF
 
+import ctypes as ct
+
 # load BPF program
 b = BPF(text="""
+#include <linux/sched.h>
+#include <trace/events/block.h>
+
+// define output data structure in C
+struct data_t {
+    u32 pid;
+    u64 ts;
+    u64 delta;
+    u32 bytes;
+    char rwbs[RWBS_LEN];
+    char comm[TASK_COMM_LEN];
+};
+BPF_PERF_OUTPUT(events);
+
 BPF_HASH(start, u32);
 BPF_HASH(size, u32, u32);
 
@@ -32,34 +48,63 @@ TRACEPOINT_PROBE(block, block_rq_issue) {
 }
 
 TRACEPOINT_PROBE(block, block_rq_complete) {
-    u64 *tsp, delta;
+    struct data_t data = {};
+    u64 *tsp;
     u32 *bsp;
 
-    u32 pid = bpf_get_current_pid_tgid();
-    tsp = start.lookup(&pid);
-    bsp = size.lookup(&pid);
+    data.pid = bpf_get_current_pid_tgid();
+    tsp = start.lookup(&data.pid);
+    bsp = size.lookup(&data.pid);
 
     if (tsp != 0 && bsp != 0) {
-        delta = bpf_ktime_get_ns() - *tsp;
-        bpf_trace_printk("%d %s %d\\n", *bsp, args->rwbs,
-            delta / 1000);
+        data.ts = bpf_ktime_get_ns();
+        data.delta = (data.ts - *tsp) / 1000;
+        data.bytes = *bsp;
+        memcpy(data.rwbs, args->rwbs, sizeof(args->rwbs));
+        bpf_get_current_comm(&data.comm, sizeof(data.comm));
 
-        start.delete(&pid);
-        size.delete(&pid);
+        events.perf_submit(args, &data, sizeof(data));
+
+        start.delete(&data.pid);
+        size.delete(&data.pid);
     }
 
     return 0;
 }
 """)
 
+# define output data structure in Python
+TASK_COMM_LEN = 16  # linux/sched.h
+RWBS_LEN = 8  # trace/events/block.h
+
+
+class Data(ct.Structure):
+    _fields_ = [("pid", ct.c_uint), ("ts", ct.c_ulonglong),
+                ("delta", ct.c_ulonglong), ("bytes", ct.c_uint),
+                ("rwbs", ct.c_char * RWBS_LEN), ("comm",
+                                                 ct.c_char * TASK_COMM_LEN)]
+
+
 # header
-print("%-18s %-6s %-7s %8s" % ("TIME(s)", "T", "BYTES", "LAT(ms)"))
+print("%-18s %-8s %-16s %-8s %-16s %6s" % ("TIME(s)", "PID", "COMM", "T",
+                                           "BYTES", "LAT(ms)"))
 
-# format output
+# process event
+start = 0
+
+
+def print_event(cpu, data, size):
+    global start
+    event = ct.cast(data, ct.POINTER(Data)).contents
+    if start == 0:
+        start = event.ts
+    time_s = (float(event.ts - start)) / 1000000000
+    ms = float(event.delta) / 1000
+    print("%-18.9f %-8d %-16s %-8s %-16d %-6.3f" %
+          (time_s, event.pid, event.comm, event.rwbs, event.bytes, ms))
+
+
+# loop with callback to print_event
+b["events"].open_perf_buffer(print_event)
 while 1:
-    (task, pid, cpu, flags, ts, msg) = b.trace_fields()
-    (bytes_s, rwbs_s, us_s) = msg.split()
-
-    ms = float(int(us_s, 10)) / 1000
-
-    print("%-18.9f %-6s %-7s %8.2f" % (ts, rwbs_s, bytes_s, ms))
+    b.kprobe_poll()
