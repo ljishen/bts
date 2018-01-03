@@ -60,7 +60,7 @@ TRACEPOINT_PROBE(block, block_rq_complete) {
         data.ts = bpf_ktime_get_ns();
         data.delta = (data.ts - *tsp) / 1000;
         data.bytes = *bsp;
-        memcpy(data.rwbs, args->rwbs, sizeof(args->rwbs));
+        bpf_probe_read(data.rwbs, sizeof(args->rwbs), args->rwbs);
         bpf_get_current_comm(&data.comm, sizeof(data.comm));
 
         events.perf_submit(args, &data, sizeof(data));
