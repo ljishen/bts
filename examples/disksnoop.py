@@ -100,8 +100,10 @@ def print_event(cpu, data, size):
         start = event.ts
     time_s = (float(event.ts - start)) / 1000000000
     ms = float(event.delta) / 1000
-    print("%-18.9f %-8d %-16s %-8s %-16d %-6.3f" %
-          (time_s, event.pid, event.comm, event.rwbs, event.bytes, ms))
+    print("%-18.9f %-8d %-16s %-8s %-16d %-6.3f" % (time_s, event.pid,
+                                                    event.comm.decode(),
+                                                    event.rwbs.decode(),
+                                                    event.bytes, ms))
 
 
 # loop with callback to print_event
